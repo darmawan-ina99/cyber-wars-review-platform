@@ -5,11 +5,10 @@ const nextConfig = {
   async headers() {
     return [
       {
+        // Redirect responses set their own no-store headers in the route
+        // handler (see app/r/[slug]/route.ts) to avoid duplicate headers.
         source: "/r/:slug*",
-        headers: [
-          { key: "Cache-Control", value: "no-store, max-age=0" },
-          { key: "X-Robots-Tag", value: "noindex" },
-        ],
+        headers: [{ key: "X-Robots-Tag", value: "noindex" }],
       },
     ];
   },
