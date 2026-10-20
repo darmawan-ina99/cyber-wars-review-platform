@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #05050a;
+  color: #ffffff;
+  font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+}
+
+/* ---- Tactical grid background ---- */
+.cyber-grid {
+  background-image:
+    linear-gradient(rgba(0, 240, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 240, 255, 0.05) 1px, transparent 1px);
+  background-size: 42px 42px;
+}
+
+/* ---- HUD panel: sharp clipped corners ---- */
+@layer components {
+  .hud-panel {
+    position: relative;
+    background: linear-gradient(145deg, rgba(10, 10, 18, 0.92), rgba(5, 5, 10, 0.97));
+    border: 1px solid rgba(0, 240, 255, 0.25);
+    clip-path: polygon(
+      16px 0, 100% 0, 100% calc(100% - 16px),
+      calc(100% - 16px) 100%, 0 100%, 0 16px
+    );
+    backdrop-filter: blur(8px);
+  }
+  .hud-panel::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    width: 14px;
+    height: 14px;
+    border-top: 1px solid rgba(0, 240, 255, 0.9);
+    border-left: 1px solid rgba(0, 240, 255, 0.9);
+    pointer-events: none;
+  }
+  .hud-panel::after {
+    content: "";
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    width: 14px;
+    height: 14px;
+    border-bottom: 1px solid rgba(0, 240, 255, 0.9);
+    border-right: 1px solid rgba(0, 240, 255, 0.9);
+    pointer-events: none;
+  }
+  .hud-panel--danger {
+    border-color: rgba(255, 0, 60, 0.35);
+  }
+
+  /* ---- Buttons ---- */
+  .btn-neon {
+    @apply font-hud text-xs uppercase tracking-[0.2em] px-5 py-2.5 transition-all duration-200;
+    background: rgba(0, 240, 255, 0.08);
+    color: #00f0ff;
+    border: 1px solid rgba(0, 240, 255, 0.5);
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  }
+  .btn-neon:hover {
+    background: rgba(0, 240, 255, 0.18);
+    box-shadow: 0 0 14px rgba(0, 240, 255, 0.45);
+  }
+  .btn-neon:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  .btn-danger {
+    @apply font-hud text-xs uppercase tracking-[0.2em] px-5 py-2.5 transition-all duration-200;
+    background: rgba(255, 0, 60, 0.08);
+    color: #ff003c;
+    border: 1px solid rgba(255, 0, 60, 0.5);
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  }
+  .btn-danger:hover {
+    background: rgba(255, 0, 60, 0.18);
+    box-shadow: 0 0 14px rgba(255, 0, 60, 0.45);
+  }
+
+  /* ---- Inputs ---- */
+  .input-terminal {
+    @apply w-full bg-obsidian-raised border px-3 py-2.5 text-sm text-white
+      placeholder:text-slatehud/50 outline-none transition-shadow duration-200;
+    border-color: rgba(0, 240, 255, 0.25);
+  }
+  .input-terminal:focus {
+    border-color: rgba(0, 240, 255, 0.9);
+    box-shadow: 0 0 12px rgba(0, 240, 255, 0.25), inset 0 0 8px rgba(0, 240, 255, 0.06);
+  }
+  .input-terminal--error {
+    border-color: rgba(255, 0, 60, 0.8) !important;
+    box-shadow: 0 0 12px rgba(255, 0, 60, 0.3) !important;
+  }
+
+  /* ---- Pulsing radar status dot ---- */
+  .radar-dot {
+    @apply inline-block h-2.5 w-2.5 rounded-full;
+    animation: radar 1.6s ease-in-out infinite;
+  }
+}
+
+/* ---- Scanline sweep overlay ---- */
+.scanline {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  height: 120px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(0, 240, 255, 0.035),
+    transparent
+  );
+  animation: scan 6s linear infinite;
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #05050a; }
+::-webkit-scrollbar-thumb { background: #15151f; border: 1px solid rgba(0,240,255,0.3); }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 240, 255, 0.25); }
