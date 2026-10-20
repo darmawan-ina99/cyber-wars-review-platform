@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { getSupabase } from "@/lib/supabase";
+import { useCallback, useEffect, useState } from "react";
 import EditTargetModal from "@/components/EditTargetModal";
 import QrButton from "@/components/QrButton";
 
@@ -17,75 +16,119 @@ export interface CardRow {
 }
 
 export default function CommandCenter() {
-  const supabase = useMemo(() => getSupabase(), []);
-  const [email, setEmail] = useState("");
-  const [session, setSession] = useState<{ id: string } | null>(null);
+  // null = sedang cek sesi, false = perlu PIN, true = authenticated
+  const [authed, setAuthed] = useState<boolean | null>(null);
+  const [pin, setPin] = useState("");
+  const [pinBusy, setPinBusy] = useState(false);
   const [cards, setCards] = useState<CardRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<CardRow | null>(null);
+  const [newSlug, setNewSlug] = useState("");
+  const [newUrl, setNewUrl] = useState("");
 
-  /* ---------- auth ---------- */
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session?.user ? { id: data.session.user.id } : null);
-      setLoading(false);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s?.user ? { id: s.user.id } : null);
-    });
-    return () => sub.subscription.unsubscribe();
-  }, [supabase]);
-
-  const load = useCallback(async () => {
+  /* ---------- session bootstrap ---------- */
+  const load = useCallback(async (): Promise<boolean> => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("cards")
-      .select("id, card_slug, target_google_url, click_count, is_active, created_at")
-      .order("created_at", { ascending: false });
-    if (error) setNotice(`[ERR] Gagal memuat kartu: ${error.message}`);
-    setCards((data as CardRow[]) ?? []);
+    const res = await fetch("/api/cards", { cache: "no-store" });
+    if (res.status === 401) {
+      setAuthed(false);
+      setLoading(false);
+      return false;
+    }
+    const body = await res.json().catch(() => ({ cards: [] }));
+    setCards((body.cards as CardRow[]) ?? []);
+    setAuthed(true);
     setLoading(false);
-  }, [supabase]);
+    return true;
+  }, []);
 
   useEffect(() => {
-    if (session) void load();
-  }, [session, load]);
+    void load();
+  }, [load]);
 
-  /* ---------- actions ---------- */
-  async function signIn() {
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin },
+  /* ---------- PIN auth ---------- */
+  async function submitPin() {
+    if (!pin || pinBusy) return;
+    setPinBusy(true);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setPin("");
+        const ok = await load();
+        if (ok) setNotice("[OK] Akses diterima. Uplink aman.");
+      } else {
+        setNotice(`[ERR] ${body.message ?? "Kode akses ditolak."}`);
+      }
+    } finally {
+      setPinBusy(false);
+    }
+  }
+
+  async function signOut() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setCards([]);
+    setAuthed(false);
+    setNotice(null);
+  }
+
+  /* ---------- card actions ---------- */
+  async function createCard() {
+    setNotice(null);
+    const res = await fetch("/api/cards", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: newSlug, url: newUrl }),
     });
-    setNotice(
-      error ? `[ERR] ${error.message}` : "[OK] Link akses dikirim ke email Anda."
-    );
+    const body = await res.json().catch(() => ({}));
+    if (res.ok) {
+      setCards((prev) => [body.card as CardRow, ...prev]);
+      setNewSlug("");
+      setNewUrl("");
+      setNotice(
+        `[OK] Kartu /${body.card.card_slug} dibuat. Short URL siap dicetak ke chip.`
+      );
+    } else {
+      setNotice(`[ERR] ${body.message ?? "Gagal membuat kartu."}`);
+    }
   }
 
   async function commitTarget(card: CardRow, nextUrl: string) {
-    const { error } = await supabase
-      .from("cards")
-      .update({ target_google_url: nextUrl })
-      .eq("id", card.id);
-    if (error) throw new Error(error.message);
+    const res = await fetch(`/api/cards/${card.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_google_url: nextUrl }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.message ?? "Gagal menyimpan tautan.");
     setCards((prev) =>
       prev.map((c) => (c.id === card.id ? { ...c, target_google_url: nextUrl } : c))
     );
-    setNotice(`[OK] Target /${card.card_slug} diperbarui. Chip fisik tidak perlu diubah.`);
+    setNotice(
+      `[OK] Target /${card.card_slug} diperbarui. Chip fisik tidak perlu diubah.`
+    );
   }
 
   async function toggleActive(card: CardRow) {
     const next = !card.is_active;
-    const { error } = await supabase
-      .from("cards")
-      .update({ is_active: next })
-      .eq("id", card.id);
-    if (error) {
-      setNotice(`[ERR] ${error.message}`);
+    const res = await fetch(`/api/cards/${card.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_active: next }),
+    });
+    if (!res.ok) {
+      setNotice("[ERR] Gagal mengubah status kartu.");
       return;
     }
-    setCards((prev) => prev.map((c) => (c.id === card.id ? { ...c, is_active: next } : c)));
+    setCards((prev) =>
+      prev.map((c) => (c.id === card.id ? { ...c, is_active: next } : c))
+    );
   }
 
   async function copyShort(card: CardRow) {
@@ -103,7 +146,20 @@ export default function CommandCenter() {
   const online = cards.filter((c) => c.is_active).length;
 
   /* ---------- gate ---------- */
-  if (!session) {
+  if (authed === null) {
+    return (
+      <main className="relative z-10 mx-auto flex min-h-screen max-w-md flex-col justify-center px-5">
+        <div className="hud-panel p-7 text-center">
+          <p className="text-[10px] uppercase tracking-[0.35em] text-neon-cyan/70">
+            // establishing-uplink
+          </p>
+          <p className="mt-3 text-xs text-slatehud">Memverifikasi sesi operator...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!authed) {
     return (
       <main className="relative z-10 mx-auto flex min-h-screen max-w-md flex-col justify-center px-5">
         <div className="hud-panel p-7">
@@ -114,20 +170,28 @@ export default function CommandCenter() {
             Cyber Wars <span className="text-neon-cyan">Command</span>
           </h1>
           <p className="mt-3 text-xs leading-relaxed text-slatehud">
-            Autentikasi operator diperlukan untuk mengakses panel kendali tautan
+            Masukkan kode akses operator untuk membuka panel kendali tautan
             ulasan.
           </p>
           <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="operator@domain.com"
-            className="input-terminal mt-5"
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 10))}
+            onKeyDown={(e) => e.key === "Enter" && void submitPin()}
+            placeholder="••••••"
+            inputMode="numeric"
+            autoComplete="off"
+            autoFocus
+            className="input-terminal mt-5 text-center text-lg tracking-[0.5em]"
             spellCheck={false}
           />
-          <button className="btn-neon mt-4 w-full" onClick={() => void signIn()}>
-            Request Access Link
+          <button
+            className="btn-neon mt-4 w-full"
+            onClick={() => void submitPin()}
+            disabled={pinBusy || pin.length < 4}
+          >
+            {pinBusy ? "Verifying..." : "Request Access"}
           </button>
-          {notice && <p className="mt-4 text-[11px] text-neon-amber">{notice}</p>}
+          {notice && <p className="mt-4 text-[11px] text-neon-crimson">{notice}</p>}
         </div>
       </main>
     );
@@ -149,7 +213,7 @@ export default function CommandCenter() {
           <button className="btn-neon" onClick={() => void load()}>
             {loading ? "Syncing..." : "Reload Grid"}
           </button>
-          <button className="btn-danger" onClick={() => void supabase.auth.signOut()}>
+          <button className="btn-danger" onClick={() => void signOut()}>
             Sign Out
           </button>
         </div>
@@ -172,12 +236,42 @@ export default function CommandCenter() {
         </p>
       )}
 
+      {/* ---------- create card ---------- */}
+      <section className="hud-panel mb-6 p-5">
+        <p className="text-[10px] uppercase tracking-[0.35em] text-neon-cyan/70">
+          // deploy-new-card
+        </p>
+        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_2fr_auto]">
+          <input
+            value={newSlug}
+            onChange={(e) => setNewSlug(e.target.value)}
+            placeholder="slug-kartu"
+            className="input-terminal"
+            spellCheck={false}
+          />
+          <input
+            value={newUrl}
+            onChange={(e) => setNewUrl(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void createCard()}
+            placeholder="https://g.page/r/XXXXXXXXXX/review"
+            className="input-terminal"
+            spellCheck={false}
+          />
+          <button className="btn-neon" onClick={() => void createCard()}>
+            Deploy Card
+          </button>
+        </div>
+        <p className="mt-3 text-[10px] uppercase tracking-[0.2em] text-slatehud">
+          slug jadi short URL: {ORIGIN}/r/slug-kartu
+        </p>
+      </section>
+
       {/* ---------- card grid ---------- */}
       <section className="space-y-4">
         {cards.length === 0 && !loading && (
           <div className="hud-panel p-8 text-center text-xs text-slatehud">
-            Tidak ada kartu terdaftar. Buat baris baru pada tabel <code>cards</code>{" "}
-            (atau lewat form Create Card) untuk mengaktifkan grid.
+            Tidak ada kartu terdaftar. Gunakan form Deploy New Card di atas untuk
+            mengaktifkan grid.
           </div>
         )}
 
